@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import queue
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from iec103.protocol import FrameParser, build_fixed, build_general_interrogation, decode_asdu, hex_bytes
 from iec103.serial_worker import SerialSettings, SerialWorker
@@ -20,7 +20,7 @@ CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 class ReaderApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title(f"{APP_NAME} 1.0.0")
+        self.title(f"{APP_NAME} 1.1.0")
         self.geometry("1450x820")
         self.minsize(1050, 620)
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -28,6 +28,9 @@ class ReaderApp(tk.Tk):
         self.worker = SerialWorker(self.events)
         self.parser = FrameParser()
         self.rows: dict[str, str] = {}
+        self.row_keys: dict[str, str] = {}
+        self.latest_values: dict[str, tuple[object, str]] = {}
+        self.scaling_factors: dict[str, float] = {}
         self.rx_bytes = 0
         self.tx_bytes = 0
         self.poll_job: str | None = None
@@ -98,6 +101,7 @@ class ReaderApp(tk.Tk):
         ttk.Button(toolbar, text="Traffic leeren", command=self.clear_traffic).pack(side=tk.RIGHT, padx=3)
         ttk.Button(toolbar, text="Wertetabelle leeren", command=self.clear_values).pack(side=tk.RIGHT, padx=3)
         ttk.Button(toolbar, text="CSV exportieren", command=self.export_csv).pack(side=tk.RIGHT, padx=3)
+        ttk.Button(toolbar, text="Faktor für Wert setzen", command=self.set_selected_factor).pack(side=tk.RIGHT, padx=3)
 
         split = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
@@ -120,17 +124,20 @@ class ReaderApp(tk.Tk):
         self.traffic.tag_configure("error", foreground="#FF7B72")
         self.traffic.tag_configure("meta", foreground="#C9D1D9")
 
-        columns = ("address", "type", "element", "value", "quality", "unit", "timestamp", "count")
+        columns = ("address", "type", "element", "received", "factor", "calculated", "quality", "unit", "timestamp", "count")
         self.table = ttk.Treeview(values_frame, columns=columns, show="headings")
         headings = {
             "address": "Adresse", "type": "ASDU-Typ", "element": "Datenelement",
-            "value": "Wert", "quality": "Qualität", "unit": "Einheit",
+            "received": "Empfangen", "factor": "Faktor", "calculated": "Berechnet",
+            "quality": "Qualität", "unit": "Einheit",
             "timestamp": "Zeitstempel", "count": "Anzahl",
         }
-        widths = {"address": 190, "type": 190, "element": 145, "value": 220, "quality": 100, "unit": 90, "timestamp": 165, "count": 65}
+        widths = {"address": 190, "type": 170, "element": 130, "received": 115, "factor": 80,
+                  "calculated": 125, "quality": 100, "unit": 85, "timestamp": 165, "count": 65}
         for name in columns:
             self.table.heading(name, text=headings[name], command=lambda n=name: self.sort_table(n, False))
-            self.table.column(name, width=widths[name], minwidth=55, stretch=name in ("value", "type"))
+            self.table.column(name, width=widths[name], minwidth=55, stretch=name in ("calculated", "type"))
+        self.table.bind("<Double-1>", self.set_selected_factor)
         table_y = ttk.Scrollbar(values_frame, orient=tk.VERTICAL, command=self.table.yview)
         table_x = ttk.Scrollbar(values_frame, orient=tk.HORIZONTAL, command=self.table.xview)
         self.table.configure(yscrollcommand=table_y.set, xscrollcommand=table_x.set)
@@ -253,19 +260,55 @@ class ReaderApp(tk.Tk):
         except Exception as error:
             self.log("ERR", f"ASDU konnte nicht dekodiert werden: {error}", "error")
 
-    def update_value(self, value, timestamp: str) -> None:
+    def update_value(self, value, timestamp: str, increment: bool = True) -> None:
         rendered = json.dumps(value.value, ensure_ascii=False) if isinstance(value.value, (dict, list)) else str(value.value)
+        numeric = isinstance(value.value, (int, float)) and not isinstance(value.value, bool)
+        factor = self.scaling_factors.get(value.key, 1.0) if numeric else None
+        calculated = self.format_number(float(value.value) * factor) if numeric else rendered
+        factor_text = self.format_number(factor) if numeric else ""
         address = f"CA {value.common_address} / FUN {value.function_type} / INF {value.information_number}"
         current = self.rows.get(value.key)
         count = 1
         if current:
             old = self.table.item(current, "values")
-            count = int(old[7]) + 1
-            self.table.item(current, values=(address, f"{value.type_id}: {value.type_name}", value.element, rendered, value.quality, value.unit, timestamp, count))
+            count = int(old[9]) + (1 if increment else 0)
+            self.table.item(current, values=(address, f"{value.type_id}: {value.type_name}", value.element, rendered, factor_text, calculated, value.quality, value.unit, timestamp, count))
             self.table.move(current, "", 0)
         else:
-            item = self.table.insert("", 0, values=(address, f"{value.type_id}: {value.type_name}", value.element, rendered, value.quality, value.unit, timestamp, count))
+            item = self.table.insert("", 0, values=(address, f"{value.type_id}: {value.type_name}", value.element, rendered, factor_text, calculated, value.quality, value.unit, timestamp, count))
             self.rows[value.key] = item
+            self.row_keys[item] = value.key
+        self.latest_values[value.key] = (value, timestamp)
+
+    @staticmethod
+    def format_number(value: float) -> str:
+        return f"{value:.12g}"
+
+    def set_selected_factor(self, _event=None) -> None:
+        selected = self.table.selection()
+        if not selected:
+            messagebox.showinfo(APP_NAME, "Bitte zuerst einen Messwert in der Tabelle auswählen.", parent=self)
+            return
+        item = selected[0]
+        key = self.row_keys.get(item)
+        latest = self.latest_values.get(key or "")
+        if not key or not latest or not isinstance(latest[0].value, (int, float)) or isinstance(latest[0].value, bool):
+            messagebox.showinfo(APP_NAME, "Für diesen Wert kann kein Zahlenfaktor gesetzt werden.", parent=self)
+            return
+        current = self.scaling_factors.get(key, 1.0)
+        factor = simpledialog.askfloat(
+            APP_NAME,
+            f"Faktor für {key}:\n\nBerechnet = Empfangen × Faktor",
+            initialvalue=current,
+            parent=self,
+        )
+        if factor is None:
+            return
+        self.scaling_factors[key] = factor
+        value, timestamp = latest
+        self.update_value(value, timestamp, increment=False)
+        self.save_settings(silent=True)
+        self.status.set(f"Faktor {self.format_number(factor)} gespeichert für {key}")
 
     def log(self, direction: str, message: str, tag: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -284,6 +327,8 @@ class ReaderApp(tk.Tk):
         for item in self.table.get_children():
             self.table.delete(item)
         self.rows.clear()
+        self.row_keys.clear()
+        self.latest_values.clear()
 
     def sort_table(self, column: str, reverse: bool) -> None:
         values = [(self.table.set(item, column).lower(), item) for item in self.table.get_children("")]
@@ -304,12 +349,14 @@ class ReaderApp(tk.Tk):
         self.status.set(f"CSV gespeichert: {filename}")
 
     def settings_dict(self) -> dict:
-        return {name: variable.get() for name, variable in {
+        values = {name: variable.get() for name, variable in {
             "port": self.port, "baudrate": self.baudrate, "databits": self.databits,
             "parity": self.parity, "stopbits": self.stopbits, "link_address": self.link_address,
             "common_address": self.common_address, "active_master": self.active_master,
             "poll_interval": self.poll_interval, "auto_gi": self.auto_gi,
         }.items()}
+        values["scaling_factors"] = self.scaling_factors
+        return values
 
     def save_settings(self, silent: bool = False) -> None:
         try:
@@ -334,6 +381,12 @@ class ReaderApp(tk.Tk):
             for key, variable in variables.items():
                 if key in values:
                     variable.set(values[key])
+            factors = values.get("scaling_factors", {})
+            if isinstance(factors, dict):
+                self.scaling_factors = {
+                    str(key): float(value) for key, value in factors.items()
+                    if isinstance(value, (int, float))
+                }
         except (OSError, ValueError) as error:
             if not silent:
                 messagebox.showerror(APP_NAME, str(error), parent=self)

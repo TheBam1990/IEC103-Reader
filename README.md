@@ -11,7 +11,8 @@ Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über
 - Link-Reset, Klasse-1-/Klasse-2-Abfrage und Generalabfrage
 - laufende RX-/TX-Telegrammanzeige mit Prüfsummenfehlern
 - begrenztes Trafficfenster, damit der Speicher nicht unbegrenzt wächst
-- Wertetabelle mit CA, FUN, INF, ASDU-Typ, Datenelement, Wert, Qualität und Zeitstempel
+- Wertetabelle mit CA, FUN, INF, ASDU-Typ, Empfangswert, Faktor, berechnetem Wert, Qualität und Zeitstempel
+- frei einstellbarer und dauerhaft gespeicherter Faktor pro gelesenem Zahlenwert
 - pro logischer Adresse/Datenelement nur eine Tabellenzeile; neue Werte aktualisieren die vorhandene Zeile
 - CSV-Export der aktuellen Wertetabelle
 - Speicherung der seriellen Einstellungen im Benutzerprofil
@@ -45,6 +46,17 @@ Die tatsächlich benötigten Adressen stehen in der Parametrierung des Schutzger
 6. Links erscheinen die vollständigen Telegramme. Rechts werden dekodierte Werte aktualisiert.
 
 Die Spalte **Anzahl** zeigt, wie oft das jeweilige Element empfangen wurde. Ein neuer Empfang legt daher keine doppelte Tabellenzeile an.
+
+### Messwerte umrechnen
+
+Einen Zahlenwert in der rechten Tabelle markieren und **Faktor für Wert setzen**
+anklicken oder die Tabellenzeile doppelt anklicken. Das Programm speichert den
+Faktor getrennt für die genaue Kombination aus CA, FUN, INF, ASDU-Typ und
+Messwertnummer. Die Spalte **Empfangen** bleibt unverändert; **Berechnet** zeigt
+`Empfangen × Faktor`. Mit Faktor `1` sind beide Werte identisch.
+
+Bei ASDU/TK 3 und 9 trennt der Decoder den vorzeichenbehafteten 13-Bit-MVAL
+korrekt von den drei Statusbits und zeigt den normierten Empfangswert an.
 
 ## Datentypen
 

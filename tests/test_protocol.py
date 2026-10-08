@@ -35,6 +35,17 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(asdu.values[0].common_address, 1)
         self.assertEqual(asdu.values[0].function_type, 160)
 
+    def test_type_9_decodes_13_bit_mval_without_status_bits(self):
+        # 2048 << 3 is normalized 0.5; the lowest three bits are status only.
+        asdu = decode_asdu(bytes([9, 0x81, 2, 1, 160, 1, 0x05, 0x40]))
+        self.assertEqual(asdu.values[0].value, 0.5)
+        self.assertNotEqual(asdu.values[0].quality, "good")
+
+    def test_type_9_decodes_negative_mval(self):
+        encoded = ((-1024 << 3) & 0xFFFF).to_bytes(2, "little")
+        asdu = decode_asdu(bytes([9, 0x81, 2, 1, 160, 1]) + encoded)
+        self.assertEqual(asdu.values[0].value, -0.25)
+
     def test_unknown_type_retains_raw_payload(self):
         asdu = decode_asdu(bytes([200, 0x81, 1, 1, 2, 3, 0xDE, 0xAD]))
         self.assertEqual(asdu.type_id, 200)

@@ -202,11 +202,12 @@ def _cp56(data: bytes) -> str:
         return hex_bytes(data[:7])
 
 
-def _normalized(raw: bytes) -> tuple[float, int]:
+def _normalized(raw: bytes) -> tuple[float, int, int]:
     word = int.from_bytes(raw[:2], "little")
-    signed = struct.unpack("<h", raw[:2])[0]
-    # IEC normalized value uses the high status bits; retaining raw is vital.
-    return round(signed / 32768.0, 7), (word >> 12) & 0x0F
+    # IEC 60870-5-103 MVAL: signed 13-bit value in bits 3..15 and three
+    # status bits in bits 0..2. Arithmetic right shift preserves the sign.
+    raw_value = struct.unpack("<h", raw[:2])[0] >> 3
+    return round(raw_value / 4096.0, 7), raw_value, word & 0x07
 
 
 def decode_asdu(raw: bytes) -> Asdu:
@@ -237,7 +238,7 @@ def decode_asdu(raw: bytes) -> Asdu:
             add("time", _cp32(payload[time_offset:time_offset + 4]))
     elif type_id in (3, 9):
         for index in range(0, len(payload) - 1, 2):
-            normalized, flags = _normalized(payload[index:index + 2])
+            normalized, _raw_value, flags = _normalized(payload[index:index + 2])
             add(f"measurand_{index // 2 + 1}", normalized, _quality(flags << 4), "normalized")
     elif type_id == 4:
         if len(payload) >= 4:
@@ -245,7 +246,7 @@ def decode_asdu(raw: bytes) -> Asdu:
             add("fault_number", int.from_bytes(payload[2:4], "little"))
         for index in range(4, max(4, len(payload) - 3), 2):
             if index + 2 <= len(payload) - 4:
-                normalized, flags = _normalized(payload[index:index + 2])
+                normalized, _raw_value, flags = _normalized(payload[index:index + 2])
                 add(f"measurand_{(index - 4) // 2 + 1}", normalized, _quality(flags << 4), "normalized")
         if len(payload) >= 8:
             add("time", _cp32(payload[-4:]))
