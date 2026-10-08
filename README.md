@@ -10,6 +10,7 @@ Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über
 - passives Mithören oder aktiver Masterbetrieb
 - Link-Reset, Klasse-1-/Klasse-2-Abfrage und Generalabfrage
 - laufende RX-/TX-Telegrammanzeige mit Prüfsummenfehlern
+- Sitzungslog `IEC103-Telegrammverkehr.txt` neben der EXE; wird bei jedem Programmstart neu begonnen
 - begrenztes Trafficfenster, damit der Speicher nicht unbegrenzt wächst
 - Wertetabelle mit CA, FUN, INF, ASDU-Typ, Empfangswert, Faktor, berechnetem Wert, Qualität und Zeitstempel
 - frei einstellbarer und dauerhaft gespeicherter Faktor pro gelesenem Zahlenwert
@@ -44,6 +45,11 @@ Die tatsächlich benötigten Adressen stehen in der Parametrierung des Schutzger
 4. **Verbinden** drücken.
 5. Im Masterbetrieb sendet das Programm einen Link-Reset, optional eine Generalabfrage und danach zyklische Klasse-1-/Klasse-2-Abfragen.
 6. Links erscheinen die vollständigen Telegramme. Rechts werden dekodierte Werte aktualisiert.
+
+Alle Zeilen aus dem Telegrammfenster werden gleichzeitig in
+`IEC103-Telegrammverkehr.txt` im Ordner der EXE geschrieben. Die Datei wird bei
+jedem Programmstart geleert und neu angelegt; ältere Sitzungen werden nicht
+angehängt.
 
 Die Spalte **Anzahl** zeigt, wie oft das jeweilige Element empfangen wurde. Ein neuer Empfang legt daher keine doppelte Tabellenzeile an.
 

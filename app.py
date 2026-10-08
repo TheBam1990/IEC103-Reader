@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import queue
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -17,10 +18,17 @@ APP_NAME = "IEC103 Reader"
 CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 
 
+def application_directory() -> Path:
+    """Return the portable executable directory, or the source directory."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
 class ReaderApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title(f"{APP_NAME} 1.1.0")
+        self.title(f"{APP_NAME} 1.1.1")
         self.geometry("1450x820")
         self.minsize(1050, 620)
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -34,6 +42,10 @@ class ReaderApp(tk.Tk):
         self.rx_bytes = 0
         self.tx_bytes = 0
         self.poll_job: str | None = None
+        self.traffic_log_path = application_directory() / "IEC103-Telegrammverkehr.txt"
+        self.traffic_log = None
+        self.traffic_log_error_reported = False
+        self.open_traffic_log()
         self._variables()
         self._style()
         self._layout()
@@ -56,6 +68,13 @@ class ReaderApp(tk.Tk):
         self.show_noise = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Bereit")
         self.counter = tk.StringVar(value="RX 0 B | TX 0 B | 0 Werte")
+
+    def open_traffic_log(self) -> None:
+        try:
+            self.traffic_log = self.traffic_log_path.open("w", encoding="utf-8", buffering=1)
+            self.traffic_log.write(f"{APP_NAME} 1.1.1 - Sitzungsstart {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+        except OSError:
+            self.traffic_log = None
 
     def _style(self) -> None:
         style = ttk.Style(self)
@@ -312,7 +331,15 @@ class ReaderApp(tk.Tk):
 
     def log(self, direction: str, message: str, tag: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        self.traffic.insert(tk.END, f"{timestamp} {direction:<3} {message}\n", tag)
+        line = f"{timestamp} {direction:<3} {message}\n"
+        self.traffic.insert(tk.END, line, tag)
+        if self.traffic_log:
+            try:
+                self.traffic_log.write(line)
+            except OSError as error:
+                if not self.traffic_log_error_reported:
+                    self.status.set(f"Logdatei konnte nicht geschrieben werden: {error}")
+                    self.traffic_log_error_reported = True
         # Bound the visual log without affecting the value table.
         line_count = int(self.traffic.index("end-1c").split(".")[0])
         if line_count > 20000:
@@ -394,6 +421,8 @@ class ReaderApp(tk.Tk):
     def close(self) -> None:
         self.stop_polling()
         self.worker.disconnect()
+        if self.traffic_log:
+            self.traffic_log.close()
         self.destroy()
 
 
