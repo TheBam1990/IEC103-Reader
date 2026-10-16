@@ -14,3 +14,8 @@ def matches_filter(values: Sequence[object], query: str, column_index: int | Non
     if column_index is not None:
         return 0 <= column_index < len(fields) and needle in fields[column_index]
     return any(needle in field for field in fields)
+
+
+def matches_filters(values: Sequence[object], filters: dict[int, str]) -> bool:
+    """Return whether a row matches all active column filters."""
+    return all(matches_filter(values, query, column_index) for column_index, query in filters.items())

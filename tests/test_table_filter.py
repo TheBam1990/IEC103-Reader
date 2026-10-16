@@ -1,6 +1,6 @@
 import unittest
 
-from iec103.table_filter import matches_filter
+from iec103.table_filter import matches_filter, matches_filters
 
 
 class TableFilterTests(unittest.TestCase):
@@ -31,6 +31,10 @@ class TableFilterTests(unittest.TestCase):
 
     def test_unknown_text_does_not_match(self):
         self.assertFalse(matches_filter(self.values, "nicht vorhanden"))
+
+    def test_multiple_column_filters_must_all_match(self):
+        self.assertTrue(matches_filters(self.values, {0: "fun 134", 6: "good", 7: "a"}))
+        self.assertFalse(matches_filters(self.values, {0: "fun 134", 6: "invalid"}))
 
 
 if __name__ == "__main__":

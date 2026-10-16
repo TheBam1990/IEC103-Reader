@@ -13,10 +13,10 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from iec103.protocol import FrameParser, build_fixed, build_general_interrogation, decode_asdu, hex_bytes
 from iec103.serial_worker import SerialSettings, SerialWorker
-from iec103.table_filter import matches_filter
+from iec103.table_filter import matches_filters
 
 APP_NAME = "IEC103 Reader"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 
 
@@ -70,8 +70,7 @@ class ReaderApp(tk.Tk):
         self.show_noise = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Bereit")
         self.counter = tk.StringVar(value="RX 0 B | TX 0 B | 0 Werte")
-        self.table_filter = tk.StringVar()
-        self.filter_column = tk.StringVar(value="Alle Spalten")
+        self.column_filters: dict[str, tk.StringVar] = {}
 
     def open_traffic_log(self) -> None:
         try:
@@ -125,6 +124,7 @@ class ReaderApp(tk.Tk):
         ttk.Button(toolbar, text="Wertetabelle leeren", command=self.clear_values).pack(side=tk.RIGHT, padx=3)
         ttk.Button(toolbar, text="CSV exportieren", command=self.export_csv).pack(side=tk.RIGHT, padx=3)
         ttk.Button(toolbar, text="Faktor für Wert setzen", command=self.set_selected_factor).pack(side=tk.RIGHT, padx=3)
+        ttk.Button(toolbar, text="Alle Filter löschen", command=self.clear_table_filters).pack(side=tk.RIGHT, padx=3)
 
         split = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
@@ -148,20 +148,6 @@ class ReaderApp(tk.Tk):
         self.traffic.tag_configure("meta", foreground="#C9D1D9")
 
         columns = ("address", "type", "element", "received", "factor", "calculated", "quality", "unit", "timestamp", "count")
-        filter_bar = ttk.Frame(values_frame)
-        filter_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Label(filter_bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 4))
-        filter_entry = ttk.Entry(filter_bar, textvariable=self.table_filter, width=28)
-        filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        filter_entry.bind("<Escape>", lambda _event: self.clear_table_filter())
-        ttk.Combobox(
-            filter_bar,
-            textvariable=self.filter_column,
-            state="readonly",
-            width=18,
-            values=("Alle Spalten", "Adresse", "ASDU-Typ", "Datenelement", "Empfangen", "Berechnet", "Qualität", "Einheit"),
-        ).pack(side=tk.LEFT, padx=4)
-        ttk.Button(filter_bar, text="Filter löschen", command=self.clear_table_filter).pack(side=tk.LEFT)
         self.table = ttk.Treeview(values_frame, columns=columns, show="headings")
         headings = {
             "address": "Adresse", "type": "ASDU-Typ", "element": "Datenelement",
@@ -173,18 +159,28 @@ class ReaderApp(tk.Tk):
                   "calculated": 125, "quality": 100, "unit": 85, "timestamp": 165, "count": 65}
         for name in columns:
             self.table.heading(name, text=headings[name], command=lambda n=name: self.sort_table(n, False))
-            self.table.column(name, width=widths[name], minwidth=55, stretch=name in ("calculated", "type"))
+            self.table.column(name, width=widths[name], minwidth=55, stretch=False)
+        self.filter_canvas = tk.Canvas(values_frame, height=27, highlightthickness=0)
+        filter_x = 0
+        for name in columns:
+            variable = tk.StringVar()
+            self.column_filters[name] = variable
+            entry = ttk.Entry(self.filter_canvas, textvariable=variable)
+            entry.bind("<Escape>", lambda _event: self.clear_table_filters())
+            self.filter_canvas.create_window(filter_x, 1, anchor="nw", width=widths[name], height=25, window=entry)
+            filter_x += widths[name]
+            variable.trace_add("write", lambda *_args: self.apply_table_filter())
+        self.filter_canvas.configure(scrollregion=(0, 0, filter_x, 27))
         self.table.bind("<Double-1>", self.set_selected_factor)
         table_y = ttk.Scrollbar(values_frame, orient=tk.VERTICAL, command=self.table.yview)
-        table_x = ttk.Scrollbar(values_frame, orient=tk.HORIZONTAL, command=self.table.xview)
-        self.table.configure(yscrollcommand=table_y.set, xscrollcommand=table_x.set)
+        table_x = ttk.Scrollbar(values_frame, orient=tk.HORIZONTAL, command=self.scroll_value_table)
+        self.table.configure(yscrollcommand=table_y.set, xscrollcommand=lambda first, last: self.sync_table_scroll(table_x, first, last))
+        self.filter_canvas.grid(row=0, column=0, sticky="ew", pady=(0, 2))
         self.table.grid(row=1, column=0, sticky="nsew")
         table_y.grid(row=1, column=1, sticky="ns")
         table_x.grid(row=2, column=0, sticky="ew")
         values_frame.rowconfigure(1, weight=1)
         values_frame.columnconfigure(0, weight=1)
-        self.table_filter.trace_add("write", lambda *_args: self.apply_table_filter())
-        self.filter_column.trace_add("write", lambda *_args: self.apply_table_filter())
 
         statusbar = ttk.Frame(self)
         statusbar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -321,30 +317,35 @@ class ReaderApp(tk.Tk):
         self.apply_table_filter()
 
     def apply_table_filter(self) -> None:
-        column_indexes = {
-            "Adresse": 0,
-            "ASDU-Typ": 1,
-            "Datenelement": 2,
-            "Empfangen": 3,
-            "Berechnet": 5,
-            "Qualität": 6,
-            "Einheit": 7,
+        columns = tuple(self.table["columns"])
+        active_filters = {
+            index: self.column_filters[name].get()
+            for index, name in enumerate(columns)
+            if self.column_filters[name].get().strip()
         }
-        query = self.table_filter.get()
-        column_index = column_indexes.get(self.filter_column.get())
         visible = 0
         for item in self.rows.values():
             values = self.table.item(item, "values")
-            if matches_filter(values, query, column_index):
+            if matches_filters(values, active_filters):
                 self.table.reattach(item, "", "end")
                 visible += 1
             else:
                 self.table.detach(item)
-        if query.strip():
-            self.status.set(f"Filter aktiv: {visible} von {len(self.rows)} Werten sichtbar")
+        if active_filters:
+            self.status.set(f"{len(active_filters)} Filter aktiv: {visible} von {len(self.rows)} Werten sichtbar")
 
-    def clear_table_filter(self) -> None:
-        self.table_filter.set("")
+    def clear_table_filters(self) -> None:
+        for variable in self.column_filters.values():
+            variable.set("")
+        self.status.set(f"Alle Filter gelöscht: {len(self.rows)} Werte sichtbar")
+
+    def scroll_value_table(self, *args) -> None:
+        self.table.xview(*args)
+        self.filter_canvas.xview(*args)
+
+    def sync_table_scroll(self, scrollbar, first: str, last: str) -> None:
+        scrollbar.set(first, last)
+        self.filter_canvas.xview_moveto(first)
 
     @staticmethod
     def format_number(value: float) -> str:
