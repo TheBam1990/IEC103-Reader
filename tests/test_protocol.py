@@ -1,6 +1,7 @@
+from datetime import datetime
 import unittest
 
-from iec103.protocol import FrameParser, build_fixed, build_general_command, build_general_interrogation, build_variable, decode_asdu
+from iec103.protocol import FrameParser, build_asdu_frame, build_fixed, build_general_command, build_general_interrogation, build_time_synchronization, build_variable, decode_asdu, parse_hex_bytes
 
 
 class FrameTests(unittest.TestCase):
@@ -69,6 +70,20 @@ class FrameTests(unittest.TestCase):
     def test_general_command_rejects_invalid_dco(self):
         with self.assertRaises(ValueError):
             build_general_command(1, 1, 1, 1, 0)
+
+    def test_time_synchronization_contains_cp56_time(self):
+        frame = FrameParser().feed(build_time_synchronization(1, 2, datetime(2026, 10, 16, 18, 19, 20, 123000)))[0]
+        self.assertTrue(frame.valid)
+        self.assertEqual(frame.asdu[:6], bytes((6, 0x81, 8, 2, 0xFF, 0)))
+        self.assertEqual(frame.asdu[6:], bytes((0x9B, 0x4E, 19, 18, 0xB0, 10, 26)))
+
+    def test_custom_asdu_and_hex_parser(self):
+        payload = parse_hex_bytes("00:0A ff")
+        frame = FrameParser().feed(build_asdu_frame(3, 4, 21, 0x81, 41, 5, 6, payload))[0]
+        self.assertTrue(frame.valid)
+        self.assertEqual(frame.asdu, bytes((21, 0x81, 41, 4, 5, 6, 0, 10, 255)))
+        with self.assertRaises(ValueError):
+            parse_hex_bytes("ABC")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,9 @@ Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über
 - Linkadresse und IEC103 Common Address einstellbar
 - passives Mithören oder aktiver Masterbetrieb
 - Link-Reset, Klasse-1-/Klasse-2-Abfrage und Generalabfrage
-- geschütztes Senden allgemeiner Befehle (ASDU/TK 20) über FUN, INF, DCO und RII
+- platzsparende Sendezentrale in einem eigenen Dialogfenster
+- Standardabfragen, Zeitsynchronisation und allgemeine Befehle (ASDU/TK 20)
+- Vorlagen für generische und Störschrieb-ASDUs sowie geprüfter Hex-Expertenmodus
 - laufende RX-/TX-Telegrammanzeige mit Prüfsummenfehlern
 - Sitzungslog `IEC103-Telegrammverkehr.txt` neben der EXE; wird bei jedem Programmstart neu begonnen
 - begrenztes Trafficfenster, damit der Speicher nicht unbegrenzt wächst
@@ -78,20 +80,34 @@ Messwertnummer. Die Spalte **Empfangen** bleibt unverändert; **Berechnet** zeig
 Bei ASDU/TK 3 und 9 trennt der Decoder den vorzeichenbehafteten 13-Bit-MVAL
 korrekt von den drei Statusbits und zeigt den normierten Empfangswert an.
 
-### IEC103-Befehl senden
+### IEC103-Telegramme senden
 
-Im Bereich **IEC103-Befehl senden (ASDU/TK 20)** werden FUN, INF und RII
-eingetragen. **DCO 1** steht für AUS, **DCO 2** für EIN. Vor jedem Versand
-zeigt das Programm alle Zielangaben erneut an und verlangt eine ausdrückliche
-Bestätigung. FUN und INF werden aus Sicherheitsgründen nicht dauerhaft
-gespeichert. Die korrekten Werte müssen aus der Dokumentation des jeweiligen
-Schutzgeräts stammen.
+Die kompakte Schaltfläche **Senden ...** öffnet eine separate Sendezentrale.
+Dadurch beanspruchen die zusätzlichen Funktionen im Hauptfenster keinen
+weiteren Platz. Das Dialogfenster enthält vier Bereiche:
 
-Die Befehle werden als bestätigte Anwenderdaten mit abwechselndem
+- **Standard:** Link-Reset, Klasse 1/2, Generalabfrage und Synchronisation mit
+  der lokalen PC-Zeit
+- **Schalten:** allgemeiner Befehl ASDU/TK 20 mit FUN, INF, DCO und RII;
+  DCO 1 steht für AUS, DCO 2 für EIN
+- **Generik / Störschrieb:** editierbare Vorlagen für die Typen 21, 23 und 24
+- **Hex-Experte:** rohe ASDU oder ein vollständiges FT1.2-Telegramm; bei einer
+  ASDU erzeugt das Programm Rahmen und Prüfsumme automatisch
+
+Das vollständige Telegramm wird vor dem Versand als Hexfolge angezeigt.
+Schreibende, zeitsetzende und freie Telegramme verlangen eine ausdrückliche
+Bestätigung. Vollständige Rohrahmen werden nur akzeptiert, wenn Aufbau und
+Prüfsumme plausibel sind.
+
+Die vom Programm aufgebauten Befehle werden als bestätigte Anwenderdaten mit abwechselndem
 Frame-Count-Bit gesendet. **Link zurücksetzen** setzt diese Befehlsfolge wieder
 auf ihren Anfang. Ein Empfangs- oder Bestätigungstelegramm des Geräts erscheint
 wie gewohnt im Telegrammfenster; das Programm unterstellt daraus nicht
 automatisch, dass eine reale Schalthandlung erfolgreich war.
+
+Generische Datenbeschreibungen und Störschriebaufträge unterscheiden sich je
+nach Gerät. Die Vorlagen sind deshalb vollständig editierbar; Payload, FUN, INF,
+COT und VSQ müssen mit der Herstellerdokumentation abgeglichen werden.
 
 ## Datentypen
 

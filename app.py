@@ -11,12 +11,13 @@ import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from iec103.protocol import FrameParser, build_fixed, build_general_command, build_general_interrogation, decode_asdu, hex_bytes
+from iec103.protocol import FrameParser, build_fixed, build_general_interrogation, decode_asdu, hex_bytes
+from iec103.send_dialog import SendDialog
 from iec103.serial_worker import SerialSettings, SerialWorker
 from iec103.table_filter import matches_filters
 
 APP_NAME = "IEC103 Reader"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 
 
@@ -72,10 +73,6 @@ class ReaderApp(tk.Tk):
         self.status = tk.StringVar(value="Bereit")
         self.counter = tk.StringVar(value="RX 0 B | TX 0 B | 0 Werte")
         self.column_filters: dict[str, tk.StringVar] = {}
-        self.command_fun = tk.StringVar()
-        self.command_inf = tk.StringVar()
-        self.command_dco = tk.StringVar(value="1 - AUS")
-        self.command_rii = tk.StringVar(value="1")
 
     def open_traffic_log(self) -> None:
         try:
@@ -120,28 +117,7 @@ class ReaderApp(tk.Tk):
         ttk.Button(top, text="Klasse 2 abfragen", command=lambda: self.send(build_fixed(0x7B, self.number(self.link_address, 0, 255)))).grid(row=2, column=6, padx=3)
         ttk.Button(top, text="Generalabfrage", command=self.send_gi).grid(row=2, column=7, padx=3)
         ttk.Button(top, text="Einstellungen speichern", command=self.save_settings).grid(row=2, column=8, padx=3)
-
-        commands = ttk.LabelFrame(self, text="IEC103-Befehl senden (ASDU/TK 20)", padding=8)
-        commands.pack(fill=tk.X, padx=8, pady=4)
-        command_fields = (
-            ("FUN", self.command_fun, None, 8),
-            ("INF", self.command_inf, None, 8),
-            ("Befehl", self.command_dco, ("1 - AUS", "2 - EIN"), 12),
-            ("RII", self.command_rii, None, 8),
-        )
-        for column, (label, variable, values, width) in enumerate(command_fields):
-            ttk.Label(commands, text=label).grid(row=0, column=column, sticky=tk.W, padx=3)
-            if values:
-                widget = ttk.Combobox(commands, textvariable=variable, values=values, width=width, state="readonly")
-            else:
-                widget = ttk.Entry(commands, textvariable=variable, width=width)
-            widget.grid(row=1, column=column, sticky=tk.W, padx=3)
-        ttk.Button(commands, text="Befehl senden", command=self.send_general_command).grid(row=1, column=4, padx=10)
-        ttk.Label(
-            commands,
-            text="Achtung: Der Befehl kann einen realen Ausgang oder Schalter betätigen. FUN/INF nur nach Gerätedokumentation verwenden.",
-            foreground="#9b2c2c",
-        ).grid(row=1, column=5, sticky=tk.W, padx=8)
+        ttk.Button(top, text="Senden ...", command=self.open_send_dialog).grid(row=2, column=9, padx=3)
 
         toolbar = ttk.Frame(self, padding=(8, 3))
         toolbar.pack(fill=tk.X)
@@ -252,11 +228,13 @@ class ReaderApp(tk.Tk):
         except Exception as error:
             messagebox.showerror(APP_NAME, str(error), parent=self)
 
-    def send(self, data: bytes) -> None:
+    def send(self, data: bytes) -> bool:
         try:
             self.worker.write(data)
+            return True
         except Exception as error:
             self.log("ERR", str(error), "error")
+            return False
 
     def send_gi(self) -> None:
         try:
@@ -271,38 +249,42 @@ class ReaderApp(tk.Tk):
         except ValueError as error:
             messagebox.showerror(APP_NAME, str(error), parent=self)
 
-    def send_general_command(self) -> None:
-        try:
-            if not self.worker.connected:
-                messagebox.showerror(APP_NAME, "Bitte zuerst die serielle Verbindung herstellen.", parent=self)
-                return
-            link_address = self.number(self.link_address, 0, 255)
-            common_address = self.number(self.common_address, 0, 255)
-            function_type = self.number(self.command_fun, 0, 255)
-            information_number = self.number(self.command_inf, 0, 255)
-            return_identifier = self.number(self.command_rii, 0, 255)
-            dco = 1 if self.command_dco.get().startswith("1") else 2
-            command_name = "AUS" if dco == 1 else "EIN"
+    def open_send_dialog(self) -> None:
+        SendDialog(
+            self,
+            lambda: self.number(self.link_address, 0, 255),
+            lambda: self.number(self.common_address, 0, 255),
+            lambda: self.command_fcb,
+            self.transmit_from_dialog,
+        )
+
+    def transmit_from_dialog(self, frame: bytes, description: str, dangerous: bool) -> bool:
+        if not self.worker.connected:
+            messagebox.showerror(APP_NAME, "Bitte zuerst die serielle Verbindung herstellen.", parent=self)
+            return False
+        if dangerous:
             confirmed = messagebox.askyesno(
-                "IEC103-Befehl bestätigen",
-                f"Befehl wirklich senden?\n\nLinkadresse: {link_address}\nCommon Address: {common_address}"
-                f"\nFUN: {function_type}\nINF: {information_number}\nBefehl: {command_name} (DCO {dco})"
-                f"\nRII: {return_identifier}\n\nDieser Befehl kann eine reale Schalthandlung auslösen.",
+                "IEC103-Versand bestätigen",
+                f"{description} wirklich senden?\n\n{hex_bytes(frame)}\n\n"
+                "Das Telegramm kann Einstellungen, Uhrzeit oder reale Ausgänge des Geräts beeinflussen.",
                 icon="warning",
                 default="no",
                 parent=self,
             )
             if not confirmed:
-                return
-            frame = build_general_command(
-                link_address, common_address, function_type, information_number,
-                dco, return_identifier, self.command_fcb,
-            )
-            self.send(frame)
-            self.command_fcb = not self.command_fcb
-            self.status.set(f"IEC103-Befehl {command_name} an FUN {function_type} / INF {information_number} gesendet")
-        except ValueError as error:
+                return False
+        try:
+            if not self.send(frame):
+                return False
+            if frame.startswith(b"\x68") and len(frame) > 5 and frame[4] in (0x53, 0x73):
+                self.command_fcb = not self.command_fcb
+            if description == "Link zurücksetzen":
+                self.command_fcb = False
+            self.status.set(f"Gesendet: {description}")
+            return True
+        except Exception as error:
             messagebox.showerror(APP_NAME, str(error), parent=self)
+            return False
 
     def start_polling(self) -> None:
         self.stop_polling()
@@ -496,7 +478,6 @@ class ReaderApp(tk.Tk):
             "parity": self.parity, "stopbits": self.stopbits, "link_address": self.link_address,
             "common_address": self.common_address, "active_master": self.active_master,
             "poll_interval": self.poll_interval, "auto_gi": self.auto_gi,
-            "command_dco": self.command_dco, "command_rii": self.command_rii,
         }.items()}
         values["scaling_factors"] = self.scaling_factors
         return values
@@ -520,7 +501,6 @@ class ReaderApp(tk.Tk):
                 "parity": self.parity, "stopbits": self.stopbits, "link_address": self.link_address,
                 "common_address": self.common_address, "active_master": self.active_master,
                 "poll_interval": self.poll_interval, "auto_gi": self.auto_gi,
-                "command_dco": self.command_dco, "command_rii": self.command_rii,
             }
             for key, variable in variables.items():
                 if key in values:

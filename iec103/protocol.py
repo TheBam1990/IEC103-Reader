@@ -165,6 +165,72 @@ def build_variable(control: int, link_address: int, asdu: bytes) -> bytes:
     return bytes([START_VARIABLE, length, length, START_VARIABLE]) + body + bytes([sum(body) & 0xFF, END])
 
 
+def parse_hex_bytes(text: str) -> bytes:
+    """Parse whitespace/separator-delimited hexadecimal bytes."""
+    cleaned = text.replace("0x", "").replace("0X", "")
+    for separator in (" ", "\t", "\r", "\n", ",", ";", ":", "-"):
+        cleaned = cleaned.replace(separator, "")
+    if not cleaned:
+        return b""
+    if len(cleaned) % 2:
+        raise ValueError("Hexdaten benötigen immer zwei Zeichen pro Byte")
+    try:
+        return bytes.fromhex(cleaned)
+    except ValueError as error:
+        raise ValueError("Hexdaten enthalten ungültige Zeichen") from error
+
+
+def encode_cp56time2a(value: datetime) -> bytes:
+    """Encode a local datetime as IEC CP56Time2a (without timezone conversion)."""
+    if not 2000 <= value.year <= 2099:
+        raise ValueError("CP56Time2a unterstützt hier nur Jahre von 2000 bis 2099")
+    milliseconds = value.second * 1000 + value.microsecond // 1000
+    return (
+        milliseconds.to_bytes(2, "little")
+        + bytes((value.minute & 0x3F, value.hour & 0x1F,
+                 (value.day & 0x1F) | ((value.isoweekday() & 0x07) << 5),
+                 value.month & 0x0F, (value.year - 2000) & 0x7F))
+    )
+
+
+def build_asdu_frame(
+    link_address: int,
+    common_address: int,
+    type_id: int,
+    vsq: int,
+    cause: int,
+    function_type: int,
+    information_number: int,
+    payload: bytes = b"",
+    fcb: bool = False,
+) -> bytes:
+    """Build a confirmed IEC103 frame from explicit ASDU fields."""
+    fields = (
+        ("Linkadresse", link_address), ("Common Address", common_address),
+        ("Typ", type_id), ("VSQ", vsq), ("COT", cause),
+        ("FUN", function_type), ("INF", information_number),
+    )
+    for name, value in fields:
+        if not 0 <= value <= 255:
+            raise ValueError(f"{name} muss zwischen 0 und 255 liegen")
+    if len(payload) > 247:
+        raise ValueError("ASDU-Nutzdaten sind zu lang")
+    asdu = bytes((type_id, vsq, cause, common_address, function_type, information_number)) + payload
+    return build_variable(0x73 if fcb else 0x53, link_address, asdu)
+
+
+def build_time_synchronization(
+    link_address: int,
+    common_address: int,
+    value: datetime | None = None,
+    fcb: bool = False,
+) -> bytes:
+    """Build IEC103 ASDU 6 time synchronization using local system time."""
+    timestamp = value or datetime.now()
+    return build_asdu_frame(link_address, common_address, 6, 0x81, 8, 0xFF, 0,
+                            encode_cp56time2a(timestamp), fcb)
+
+
 def build_general_interrogation(link_address: int, common_address: int, scan_number: int = 1) -> bytes:
     asdu = bytes([7, 0x81, 6, common_address & 0xFF, 0xFF, 0, scan_number & 0xFF])
     return build_variable(0x73, link_address, asdu)
@@ -190,9 +256,9 @@ def build_general_command(
     if dco not in (1, 2):
         raise ValueError("DCO muss 1 (AUS) oder 2 (EIN) sein")
     # IEC103 general command: TYP 20, VSQ 1, COT 20, CA, FUN, INF, DCO, RII.
-    asdu = bytes((20, 0x81, 20, common_address, function_type, information_number, dco, return_identifier))
-    control = 0x73 if fcb else 0x53
-    return build_variable(control, link_address, asdu)
+    return build_asdu_frame(link_address, common_address, 20, 0x81, 20,
+                            function_type, information_number,
+                            bytes((dco, return_identifier)), fcb)
 
 
 def _quality(flags: int) -> str:
