@@ -1,6 +1,7 @@
 # IEC103 Reader für Windows
 
 Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über eine serielle RS-485-Verbindung.
+https://github.com/TheBam1990/IEC103-Reader/releases/tag/v1.4.1
 
 ## Funktionen
 
