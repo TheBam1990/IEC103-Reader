@@ -13,8 +13,10 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from iec103.protocol import FrameParser, build_fixed, build_general_interrogation, decode_asdu, hex_bytes
 from iec103.serial_worker import SerialSettings, SerialWorker
+from iec103.table_filter import matches_filter
 
 APP_NAME = "IEC103 Reader"
+APP_VERSION = "1.2.0"
 CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 
 
@@ -28,7 +30,7 @@ def application_directory() -> Path:
 class ReaderApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title(f"{APP_NAME} 1.1.1")
+        self.title(f"{APP_NAME} {APP_VERSION}")
         self.geometry("1450x820")
         self.minsize(1050, 620)
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -68,11 +70,13 @@ class ReaderApp(tk.Tk):
         self.show_noise = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Bereit")
         self.counter = tk.StringVar(value="RX 0 B | TX 0 B | 0 Werte")
+        self.table_filter = tk.StringVar()
+        self.filter_column = tk.StringVar(value="Alle Spalten")
 
     def open_traffic_log(self) -> None:
         try:
             self.traffic_log = self.traffic_log_path.open("w", encoding="utf-8", buffering=1)
-            self.traffic_log.write(f"{APP_NAME} 1.1.1 - Sitzungsstart {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+            self.traffic_log.write(f"{APP_NAME} {APP_VERSION} - Sitzungsstart {datetime.now():%Y-%m-%d %H:%M:%S}\n")
         except OSError:
             self.traffic_log = None
 
@@ -144,6 +148,20 @@ class ReaderApp(tk.Tk):
         self.traffic.tag_configure("meta", foreground="#C9D1D9")
 
         columns = ("address", "type", "element", "received", "factor", "calculated", "quality", "unit", "timestamp", "count")
+        filter_bar = ttk.Frame(values_frame)
+        filter_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Label(filter_bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 4))
+        filter_entry = ttk.Entry(filter_bar, textvariable=self.table_filter, width=28)
+        filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        filter_entry.bind("<Escape>", lambda _event: self.clear_table_filter())
+        ttk.Combobox(
+            filter_bar,
+            textvariable=self.filter_column,
+            state="readonly",
+            width=18,
+            values=("Alle Spalten", "Adresse", "ASDU-Typ", "Datenelement", "Empfangen", "Berechnet", "Qualität", "Einheit"),
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(filter_bar, text="Filter löschen", command=self.clear_table_filter).pack(side=tk.LEFT)
         self.table = ttk.Treeview(values_frame, columns=columns, show="headings")
         headings = {
             "address": "Adresse", "type": "ASDU-Typ", "element": "Datenelement",
@@ -160,11 +178,13 @@ class ReaderApp(tk.Tk):
         table_y = ttk.Scrollbar(values_frame, orient=tk.VERTICAL, command=self.table.yview)
         table_x = ttk.Scrollbar(values_frame, orient=tk.HORIZONTAL, command=self.table.xview)
         self.table.configure(yscrollcommand=table_y.set, xscrollcommand=table_x.set)
-        self.table.grid(row=0, column=0, sticky="nsew")
-        table_y.grid(row=0, column=1, sticky="ns")
-        table_x.grid(row=1, column=0, sticky="ew")
-        values_frame.rowconfigure(0, weight=1)
+        self.table.grid(row=1, column=0, sticky="nsew")
+        table_y.grid(row=1, column=1, sticky="ns")
+        table_x.grid(row=2, column=0, sticky="ew")
+        values_frame.rowconfigure(1, weight=1)
         values_frame.columnconfigure(0, weight=1)
+        self.table_filter.trace_add("write", lambda *_args: self.apply_table_filter())
+        self.filter_column.trace_add("write", lambda *_args: self.apply_table_filter())
 
         statusbar = ttk.Frame(self)
         statusbar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -298,6 +318,33 @@ class ReaderApp(tk.Tk):
             self.rows[value.key] = item
             self.row_keys[item] = value.key
         self.latest_values[value.key] = (value, timestamp)
+        self.apply_table_filter()
+
+    def apply_table_filter(self) -> None:
+        column_indexes = {
+            "Adresse": 0,
+            "ASDU-Typ": 1,
+            "Datenelement": 2,
+            "Empfangen": 3,
+            "Berechnet": 5,
+            "Qualität": 6,
+            "Einheit": 7,
+        }
+        query = self.table_filter.get()
+        column_index = column_indexes.get(self.filter_column.get())
+        visible = 0
+        for item in self.rows.values():
+            values = self.table.item(item, "values")
+            if matches_filter(values, query, column_index):
+                self.table.reattach(item, "", "end")
+                visible += 1
+            else:
+                self.table.detach(item)
+        if query.strip():
+            self.status.set(f"Filter aktiv: {visible} von {len(self.rows)} Werten sichtbar")
+
+    def clear_table_filter(self) -> None:
+        self.table_filter.set("")
 
     @staticmethod
     def format_number(value: float) -> str:
@@ -351,7 +398,7 @@ class ReaderApp(tk.Tk):
         self.traffic.delete("1.0", tk.END)
 
     def clear_values(self) -> None:
-        for item in self.table.get_children():
+        for item in tuple(self.rows.values()):
             self.table.delete(item)
         self.rows.clear()
         self.row_keys.clear()

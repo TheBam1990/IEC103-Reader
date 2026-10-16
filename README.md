@@ -16,6 +16,8 @@ Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über
 - frei einstellbarer und dauerhaft gespeicherter Faktor pro gelesenem Zahlenwert
 - pro logischer Adresse/Datenelement nur eine Tabellenzeile; neue Werte aktualisieren die vorhandene Zeile
 - CSV-Export der aktuellen Wertetabelle
+- Live-Filter für die gesamte Wertetabelle oder gezielt nach Adresse, ASDU-Typ,
+  Datenelement, Empfangswert, berechnetem Wert, Qualität und Einheit
 - Speicherung der seriellen Einstellungen im Benutzerprofil
 - bekannte IEC103-ASDUs 1–11 und 20–31
 - unbekannte sowie herstellerspezifische ASDUs bleiben als Rohdaten sichtbar
@@ -52,6 +54,15 @@ jedem Programmstart geleert und neu angelegt; ältere Sitzungen werden nicht
 angehängt.
 
 Die Spalte **Anzahl** zeigt, wie oft das jeweilige Element empfangen wurde. Ein neuer Empfang legt daher keine doppelte Tabellenzeile an.
+
+### Wertetabelle filtern
+
+Über der rechten Wertetabelle befindet sich das Feld **Filter**. Die Eingabe
+wirkt sofort und unterscheidet nicht zwischen Groß- und Kleinschreibung. Mit
+der Auswahlliste kann die Suche auf eine bestimmte Spalte begrenzt werden.
+**Filter löschen** oder die Escape-Taste zeigt wieder alle Werte an. Neue
+Telegramme werden auch bei aktivem Filter weiter eingelesen und gespeichert.
+Der CSV-Export enthält bei aktivem Filter nur die sichtbaren Tabellenzeilen.
 
 ### Messwerte umrechnen
 
