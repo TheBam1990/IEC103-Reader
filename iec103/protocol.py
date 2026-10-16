@@ -170,6 +170,31 @@ def build_general_interrogation(link_address: int, common_address: int, scan_num
     return build_variable(0x73, link_address, asdu)
 
 
+def build_general_command(
+    link_address: int,
+    common_address: int,
+    function_type: int,
+    information_number: int,
+    dco: int,
+    return_identifier: int = 1,
+    fcb: bool = False,
+) -> bytes:
+    """Build IEC103 ASDU 20 (general command) with confirmed user data."""
+    for name, value in (
+        ("Linkadresse", link_address), ("Common Address", common_address),
+        ("FUN", function_type), ("INF", information_number),
+        ("RII", return_identifier),
+    ):
+        if not 0 <= value <= 255:
+            raise ValueError(f"{name} muss zwischen 0 und 255 liegen")
+    if dco not in (1, 2):
+        raise ValueError("DCO muss 1 (AUS) oder 2 (EIN) sein")
+    # IEC103 general command: TYP 20, VSQ 1, COT 20, CA, FUN, INF, DCO, RII.
+    asdu = bytes((20, 0x81, 20, common_address, function_type, information_number, dco, return_identifier))
+    control = 0x73 if fcb else 0x53
+    return build_variable(control, link_address, asdu)
+
+
 def _quality(flags: int) -> str:
     names = []
     if flags & 0x80: names.append("invalid")

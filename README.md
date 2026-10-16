@@ -9,6 +9,7 @@ Portable grafische Anwendung zum Lesen und Analysieren von IEC 60870-5-103 über
 - Linkadresse und IEC103 Common Address einstellbar
 - passives Mithören oder aktiver Masterbetrieb
 - Link-Reset, Klasse-1-/Klasse-2-Abfrage und Generalabfrage
+- geschütztes Senden allgemeiner Befehle (ASDU/TK 20) über FUN, INF, DCO und RII
 - laufende RX-/TX-Telegrammanzeige mit Prüfsummenfehlern
 - Sitzungslog `IEC103-Telegrammverkehr.txt` neben der EXE; wird bei jedem Programmstart neu begonnen
 - begrenztes Trafficfenster, damit der Speicher nicht unbegrenzt wächst
@@ -76,6 +77,21 @@ Messwertnummer. Die Spalte **Empfangen** bleibt unverändert; **Berechnet** zeig
 
 Bei ASDU/TK 3 und 9 trennt der Decoder den vorzeichenbehafteten 13-Bit-MVAL
 korrekt von den drei Statusbits und zeigt den normierten Empfangswert an.
+
+### IEC103-Befehl senden
+
+Im Bereich **IEC103-Befehl senden (ASDU/TK 20)** werden FUN, INF und RII
+eingetragen. **DCO 1** steht für AUS, **DCO 2** für EIN. Vor jedem Versand
+zeigt das Programm alle Zielangaben erneut an und verlangt eine ausdrückliche
+Bestätigung. FUN und INF werden aus Sicherheitsgründen nicht dauerhaft
+gespeichert. Die korrekten Werte müssen aus der Dokumentation des jeweiligen
+Schutzgeräts stammen.
+
+Die Befehle werden als bestätigte Anwenderdaten mit abwechselndem
+Frame-Count-Bit gesendet. **Link zurücksetzen** setzt diese Befehlsfolge wieder
+auf ihren Anfang. Ein Empfangs- oder Bestätigungstelegramm des Geräts erscheint
+wie gewohnt im Telegrammfenster; das Programm unterstellt daraus nicht
+automatisch, dass eine reale Schalthandlung erfolgreich war.
 
 ## Datentypen
 

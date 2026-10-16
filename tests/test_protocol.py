@@ -1,6 +1,6 @@
 import unittest
 
-from iec103.protocol import FrameParser, build_fixed, build_general_interrogation, build_variable, decode_asdu
+from iec103.protocol import FrameParser, build_fixed, build_general_command, build_general_interrogation, build_variable, decode_asdu
 
 
 class FrameTests(unittest.TestCase):
@@ -56,6 +56,19 @@ class FrameTests(unittest.TestCase):
         frame = FrameParser().feed(raw)[0]
         self.assertTrue(frame.valid)
         self.assertEqual(decode_asdu(frame.asdu).values[0].value, "DEVICE")
+
+    def test_general_command_off_and_on(self):
+        off = FrameParser().feed(build_general_command(1, 2, 134, 157, 1, 23, fcb=False))[0]
+        on = FrameParser().feed(build_general_command(1, 2, 134, 157, 2, 24, fcb=True))[0]
+        self.assertTrue(off.valid and on.valid)
+        self.assertEqual(off.control, 0x53)
+        self.assertEqual(on.control, 0x73)
+        self.assertEqual(off.asdu, bytes((20, 0x81, 20, 2, 134, 157, 1, 23)))
+        self.assertEqual(on.asdu[-2:], bytes((2, 24)))
+
+    def test_general_command_rejects_invalid_dco(self):
+        with self.assertRaises(ValueError):
+            build_general_command(1, 1, 1, 1, 0)
 
 
 if __name__ == "__main__":
