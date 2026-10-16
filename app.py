@@ -17,7 +17,7 @@ from iec103.serial_worker import SerialSettings, SerialWorker
 from iec103.table_filter import matches_filters
 
 APP_NAME = "IEC103 Reader"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 CONFIG_FILE = Path.home() / "IEC103-Reader.json"
 
 

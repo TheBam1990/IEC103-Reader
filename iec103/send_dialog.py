@@ -68,9 +68,16 @@ class SendDialog(tk.Toplevel):
         ttk.Button(self, text="Schließen", command=self.destroy).pack(anchor=tk.E, padx=10, pady=(2, 10))
 
     @staticmethod
-    def _entry(parent: tk.Misc, label: str, variable: tk.StringVar, column: int, width: int = 10) -> None:
-        ttk.Label(parent, text=label).grid(row=0, column=column, sticky=tk.W, padx=4, pady=(8, 2))
-        ttk.Entry(parent, textvariable=variable, width=width).grid(row=1, column=column, sticky=tk.W, padx=4)
+    def _entry(
+        parent: tk.Misc,
+        label: str,
+        variable: tk.StringVar,
+        column: int,
+        width: int = 10,
+        row: int = 0,
+    ) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=column, sticky=tk.W, padx=4, pady=(8, 2))
+        ttk.Entry(parent, textvariable=variable, width=width).grid(row=row + 1, column=column, sticky=tk.EW, padx=4)
 
     def _show_and_send(self, frame: bytes, description: str, dangerous: bool = False) -> None:
         self.preview.set(hex_bytes(frame))
@@ -116,17 +123,18 @@ class SendDialog(tk.Toplevel):
         self.special_fun = tk.StringVar()
         self.special_inf = tk.StringVar()
         self.special_payload = tk.StringVar()
-        ttk.Label(tab, text="Vorlage").grid(row=0, column=0, sticky=tk.W, padx=4)
+        ttk.Label(tab, text="Vorlage").grid(row=0, column=0, sticky=tk.W, padx=4, pady=(0, 2))
         box = ttk.Combobox(tab, textvariable=self.special_preset, values=tuple(self.SPECIAL_PRESETS), state="readonly", width=34)
-        box.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=4)
+        box.grid(row=1, column=0, columnspan=5, sticky=tk.EW, padx=4)
         box.bind("<<ComboboxSelected>>", lambda _event: self._apply_special_preset())
         for column, (label, variable) in enumerate((("Typ", self.special_type), ("VSQ", self.special_vsq), ("COT", self.special_cot), ("FUN", self.special_fun), ("INF", self.special_inf))):
-            self._entry(tab, label, variable, column, 9)
-        ttk.Label(tab, text="Nutzdaten (Hex, ohne ASDU-Kopf)").grid(row=2, column=0, columnspan=5, sticky=tk.W, padx=4, pady=(14, 2))
-        ttk.Entry(tab, textvariable=self.special_payload, font=("Consolas", 10)).grid(row=3, column=0, columnspan=5, sticky=tk.EW, padx=4)
-        ttk.Button(tab, text="Spezial-ASDU senden", command=self._send_special).grid(row=4, column=0, sticky=tk.W, padx=4, pady=12)
-        ttk.Label(tab, text="Generische Deskriptoren und Störschriebparameter sind gerätespezifisch. Nutzdaten nach Herstellerdokumentation eintragen.", foreground="#9b2c2c", wraplength=680).grid(row=5, column=0, columnspan=5, sticky=tk.W, padx=4)
-        tab.columnconfigure(4, weight=1)
+            self._entry(tab, label, variable, column, 9, row=2)
+            tab.columnconfigure(column, weight=1)
+        ttk.Label(tab, text="Nutzdaten (Hex, ohne ASDU-Kopf)").grid(row=4, column=0, columnspan=5, sticky=tk.W, padx=4, pady=(16, 2))
+        ttk.Entry(tab, textvariable=self.special_payload, font=("Consolas", 10)).grid(row=5, column=0, columnspan=5, sticky=tk.EW, padx=4)
+        ttk.Button(tab, text="Spezial-ASDU senden", command=self._send_special).grid(row=6, column=0, columnspan=2, sticky=tk.W, padx=4, pady=14)
+        ttk.Separator(tab).grid(row=7, column=0, columnspan=5, sticky=tk.EW, padx=4, pady=(0, 10))
+        ttk.Label(tab, text="Hinweis: Generische Deskriptoren und Störschriebparameter sind gerätespezifisch. Nutzdaten deshalb nur nach Herstellerdokumentation eintragen.", foreground="#9b2c2c", wraplength=680, justify=tk.LEFT).grid(row=8, column=0, columnspan=5, sticky=tk.W, padx=4)
         self._apply_special_preset()
 
     def _expert_tab(self, notebook: ttk.Notebook) -> None:
